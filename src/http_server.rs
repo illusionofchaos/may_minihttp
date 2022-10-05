@@ -107,24 +107,19 @@ fn each_connection_loop<T: HttpService>(mut stream: TcpStream, mut service: T) {
             let buf = req_buf.chunk_mut();
             let read_buf = unsafe { std::slice::from_raw_parts_mut(buf.as_mut_ptr(), buf.len()) };
             match stream.read(read_buf) {
-                Ok(n) => {
-                    if n == 0 {
-                        //connection was closed
-                        return;
-                    } else {
-                        unsafe { req_buf.advance_mut(n) };
-                    }
+                Ok(0) => {
+                    //connection was closed
+                    break;
                 }
-                Err(err) => {
-                    if err.kind() == io::ErrorKind::WouldBlock {
+                Ok(n) => unsafe { req_buf.advance_mut(n) },
+                Err(ref e) => {
+                    if e.kind() == io::ErrorKind::WouldBlock {
                         break;
-                    } else if err.kind() == io::ErrorKind::ConnectionReset
-                        || err.kind() == io::ErrorKind::UnexpectedEof
-                    {
-                        // info!("http server read req: connection closed");
-                        return;
                     }
-                    error!("call = {:?}\nerr = {:?}", stringify!($e), err);
+                    if e.kind() != io::ErrorKind::ConnectionReset &&
+                       e.kind() != io::ErrorKind::UnexpectedEof {
+                        error!("call = {:?}\nerr = {:?}", stringify!($e), e);
+                    }
                     return;
                 }
             }

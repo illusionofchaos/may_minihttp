@@ -9,6 +9,7 @@ pub struct Request {
     version: u8,
     headers: [(Slice, Slice); 16],
     headers_len: usize,
+    body: Slice,
     data: BytesMut,
 }
 
@@ -39,6 +40,10 @@ impl Request {
             headers: self.headers[..self.headers_len].iter(),
             req: self,
         }
+    }
+    
+    pub fn body(&self) -> &[u8] {
+        self.slice(&self.body)
     }
 
     pub fn body(&self) -> &[u8] {
@@ -73,8 +78,10 @@ pub fn decode(buf: &mut BytesMut) -> io::Result<Option<Request>> {
 
     let amt = match status {
         httparse::Status::Complete(amt) => amt,
-        httparse::Status::Partial => return Ok(None),
+        httparse::Status::Partial => return Ok(None)
     };
+
+    debug_assert!(amt <= buf.len());
 
     let toslice = |a: &[u8]| {
         let start = a.as_ptr() as usize - buf.as_ptr() as usize;
@@ -89,6 +96,14 @@ pub fn decode(buf: &mut BytesMut) -> io::Result<Option<Request>> {
     let mut headers_len = 0;
     for h in r.headers.iter() {
         debug_assert!(headers_len < 16);
+        if h.name.to_lowercase() == "content-length" {
+            let content_length = unsafe { str::from_utf8_unchecked(h.value) }
+                                       .parse().unwrap();
+            if buf.len()-amt < content_length {
+                // full request body is not yet there
+                return Ok(None);
+            }
+        }
         *unsafe { headers.get_unchecked_mut(headers_len) } =
             (toslice(h.name.as_bytes()), toslice(h.value));
         headers_len += 1;
@@ -100,7 +115,8 @@ pub fn decode(buf: &mut BytesMut) -> io::Result<Option<Request>> {
         version: r.version.unwrap(),
         headers,
         headers_len,
-        data: buf.split_to(amt),
+        body: (amt, buf.len()),
+        data: buf.split_to(buf.len())
     }))
 }
 
