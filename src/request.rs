@@ -46,10 +46,6 @@ impl Request {
         self.slice(&self.body)
     }
 
-    pub fn body(&self) -> &[u8] {
-        unimplemented!()
-    }
-
     fn slice(&self, slice: &Slice) -> &[u8] {
         &self.data[slice.0..slice.1]
     }
